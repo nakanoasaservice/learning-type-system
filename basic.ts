@@ -1,4 +1,4 @@
-import { parseBasic } from "npm:tiny-ts-parser";
+import { error, parseBasic } from "npm:tiny-ts-parser";
 
 type Type =
   | { tag: "Boolean" }
@@ -50,20 +50,22 @@ function typecheck(t: Term, tyEnv: TypeEnv): Type {
       typecheck(t.cond, tyEnv);
       const thnTy = typecheck(t.thn, tyEnv);
       const elsTy = typecheck(t.els, tyEnv);
-      if (thnTy.tag !== elsTy.tag) throw "then and else have different types";
+      if (thnTy.tag !== elsTy.tag) {
+        error("then and else have different types", t.cond);
+      }
 
       return thnTy;
     case "number":
       return { tag: "Number" };
     case "add":
       const leftTy = typecheck(t.left, tyEnv);
-      if (leftTy.tag !== "Number") throw "number expected";
+      if (leftTy.tag !== "Number") error("number expected", t.left);
       const rightTy = typecheck(t.right, tyEnv);
-      if (rightTy.tag !== "Number") throw "number expected";
+      if (rightTy.tag !== "Number") error("number expected", t.right);
       return { tag: "Number" };
     case "var":
       if (tyEnv[t.name] === undefined) {
-        throw new Error(`unknown variable: ${t.name}`);
+        throw error(`unknown variable: ${t.name}`, t);
       }
       return tyEnv[t.name];
     case "func":
@@ -75,17 +77,24 @@ function typecheck(t: Term, tyEnv: TypeEnv): Type {
       return { tag: "Func", params: t.params, retType };
     case "call":
       const funcTy = typecheck(t.func, tyEnv);
-      if (funcTy.tag !== "Func") throw new Error("function type expected");
+      if (funcTy.tag !== "Func") error("function type expected", t.func);
       if (funcTy.params.length !== t.args.length) {
-        throw new Error("wrong number of arguments");
+        error("wrong number of arguments", t);
       }
       for (let i = 0; i < t.args.length; i++) {
         const argTy = typecheck(t.args[i], tyEnv);
         if (!typeEq(argTy, funcTy.params[i].type)) {
-          throw new Error("parameter type mismatch");
+          error("parameter type mismatch", t.args[i]);
         }
       }
       return funcTy.retType;
+    case "seq":
+      typecheck(t.body, tyEnv);
+      return typecheck(t.rest, tyEnv);
+    case "const":
+      const ty = typecheck(t.init, tyEnv);
+      const newTyEnv2 = { ...tyEnv, [t.name]: ty };
+      return typecheck(t.rest, newTyEnv2);
 
     default:
       throw new Error("not implemented yet");
