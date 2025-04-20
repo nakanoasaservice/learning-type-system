@@ -1,6 +1,4 @@
-import { parseArith, parseBasic } from "npm:tiny-ts-parser";
-
-console.log(parseArith("1 + 1"));
+import { parseBasic } from "npm:tiny-ts-parser";
 
 type Type =
   | { tag: "Boolean" }
@@ -15,6 +13,7 @@ type Term =
   | { tag: "add"; left: Term; right: Term }
   | { tag: "var"; name: string }
   | { tag: "func"; params: Param[]; body: Term }
+  | { tag: "call"; func: Term; args: Term[] }
   | { tag: "seq"; body: Term; rest: Term }
   | { tag: "const"; name: string; init: Term; rest: Term };
 
@@ -62,9 +61,35 @@ function typecheck(t: Term, tyEnv: TypeEnv): Type {
       const rightTy = typecheck(t.right, tyEnv);
       if (rightTy.tag !== "Number") throw "number expected";
       return { tag: "Number" };
+    case "var":
+      if (tyEnv[t.name] === undefined) {
+        throw new Error(`unknown variable: ${t.name}`);
+      }
+      return tyEnv[t.name];
+    case "func":
+      const newTyEnv = { ...tyEnv };
+      for (const { name, type } of t.params) {
+        newTyEnv[name] = type;
+      }
+      const retType = typecheck(t.body, newTyEnv);
+      return { tag: "Func", params: t.params, retType };
+    case "call":
+      const funcTy = typecheck(t.func, tyEnv);
+      if (funcTy.tag !== "Func") throw new Error("function type expected");
+      if (funcTy.params.length !== t.args.length) {
+        throw new Error("wrong number of arguments");
+      }
+      for (let i = 0; i < t.args.length; i++) {
+        const argTy = typecheck(t.args[i], tyEnv);
+        if (!typeEq(argTy, funcTy.params[i].type)) {
+          throw new Error("parameter type mismatch");
+        }
+      }
+      return funcTy.retType;
+
     default:
       throw new Error("not implemented yet");
   }
 }
 
-console.log(typecheck(parseBasic("f: (x: number) => number) => 1"), {}));
+console.log(typecheck(parseBasic("((x: number) => x)(42)"), {}));
